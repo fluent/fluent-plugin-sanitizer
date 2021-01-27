@@ -107,7 +107,7 @@ module Fluent
                 v = record[key]
                 record[key] = sanitize_ipv4_val(@salt, record[key]) if pattern_ipv4 == true
                 record[key] = sanitize_fqdn_val(@salt, record[key]) if pattern_fqdn == true
-                record[key] = sanitize_regex(@salt, v) if is_regex?(record[key]) && !!(pattern_regex =~ record[key])
+                record[key] = sanitize_regex(@salt, v) if is_regex?(pattern_regex) && !!(pattern_regex =~ record[key])
                 record[key] = sanitize_keyword_val(@salt, pattern_keywords, v) if pattern_keywords.empty? == false
               else
                 $log.error "no such key found : key name = #{key}"

@@ -8,7 +8,7 @@ Gem::Specification.new do |spec|
   spec.email   = ["tkubota@ctc-america.com"]
 
   spec.summary       = %q{Filter plugin of Fluentd which sanitize sensitive information.}
-  spec.description   = %q{The fluent-plugin-sanitizer helps users to sanitize information with custom rules.}
+  spec.description   = %q{The fluent-plugin-sanitzer is Fluentd filter plugin to sanitize sensitive information with custom rules. The fluent-plugin-sanitzer provides not only options to sanitize values with custom regular expression and keywords but also build-in options which allows users to easily sanitize IP addresses and hostnames in complex messages.}
   spec.homepage      = "https://github.com/fluent/fluent-plugin-sanitizer"
   spec.license       = "Apache-2.0"
 
