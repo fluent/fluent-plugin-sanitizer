@@ -1,4 +1,4 @@
-# Overview of fluent-plugin-sanitizer
+# fluent-plugin-sanitizer
 The fluent-plugin-sanitzer is [Fluentd](https://fluentd.org/) filter plugin to sanitize sensitive information with custom rules. The fluent-plugin-sanitzer provides not only options to sanitize values with custom regular expression and keywords but also build-in options which allows users to easily sanitize IP addresses and hostnames in complex messages.
 
 ## Installation
