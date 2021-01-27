@@ -18,8 +18,8 @@ td-agent-gem install fluent-plugin-sanitizer
   - keys : Name of keys whose values are to be sanitized. You can specify multiple keys. When keys are nested, you can use {parent key}.{child key} like "kubernetes.master_url". (:array, default:[])
   - pattern_ipv4 : sanitize if values contain IPv4. (:bool, default: false)
   - pattern_fqdn : sanitize if values contain hostname in FQDN style. (:bool, default: false)
-  - pattern_regex : Sanitize if value mactchs custom regular expression (:regexp, default: /^$/)
-  - pattern_keywords : Sanitize if values match custom keywords. You can specify multiple keywords. (:array, default:[])
+  - pattern_regex : sanitize if value mactchs custom regular expression (:regexp, default: /^$/)
+  - pattern_keywords : sanitize if values match custom keywords. You can specify multiple keywords. (:array, default:[])
 
 You can specify multiple options in a single rule like following sample configuration.
   
