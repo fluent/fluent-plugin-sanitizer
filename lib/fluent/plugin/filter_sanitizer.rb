@@ -1,5 +1,5 @@
 #
-# Copyright 2021- TODO: Write your name
+# Copyright 2021- TK Kubota
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 # limitations under the License.
 
 require "fluent/plugin/filter"
-require "openssl"
+require "digest"
 
 module Fluent
   module Plugin
@@ -38,11 +38,6 @@ module Fluent
         desc "Sanitize if values mactch custom keywords (optional)"
         config_param :pattern_keywords, :array, default: []
       end
-
-      #def initialize
-      #  super
-      #  @salt = nil
-      #end
 
       def configure(conf)
         super
@@ -78,12 +73,11 @@ module Fluent
             raise Fluent::ConfigError, "You need to specify at least one pattern option in the rule statement." 
           end
           @sanitizerules.push([keys, pattern_ipv4, pattern_fqdn, pattern_regex, pattern_keywords])
-	      end
+        end
       end
 
       def filter(tag, time, record)
-	      @sanitizerules.each do |keys, pattern_ipv4, pattern_fqdn, pattern_regex, pattern_keywords|
-          
+        @sanitizerules.each do |keys, pattern_ipv4, pattern_fqdn, pattern_regex, pattern_keywords|  
           keys.each do |key|
             if key.include?(".")
               nkey = key.split(".")
@@ -109,7 +103,7 @@ module Fluent
                 end
               end
             else
-	            if record.key?(key)
+              if record.key?(key)
                 v = record[key]
                 record[key] = sanitize_ipv4_val(@salt, record[key]) if pattern_ipv4 == true
                 record[key] = sanitize_fqdn_val(@salt, record[key]) if pattern_fqdn == true
@@ -117,11 +111,11 @@ module Fluent
                 record[key] = sanitize_keyword_val(@salt, pattern_keywords, v) if pattern_keywords.empty? == false
               else
                 $log.error "no such key found : key name = #{key}"
-	            end
+              end
             end
-	        end
-	        puts record
+          end
         end
+        record
       end
 
       def include_ipv4?(str)
