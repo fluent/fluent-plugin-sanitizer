@@ -24,7 +24,7 @@ module Fluent
       helpers :event_emitter, :record_accessor
 
       desc "Hash salt to be used to generate hash values with MD5(optional)"
-      config_param :hash_salt, :string, default: nil
+      config_param :hash_salt, :string, default: ""
       
       config_section :rule, param_name: :rules, multi: true do 
         desc "Name of keys whose valuse are to be sanitized"
@@ -35,210 +35,192 @@ module Fluent
         config_param :pattern_fqdn, :bool, default: false
         desc "Sanitize if values mactch custom regular expression (optional)"
         config_param :pattern_regex, :regexp, default: /^$/
+        desc "Prefix for pattern_regex (optional)"
+        config_param :pattern_regex_prefix, :string, default: "Regex"
         desc "Sanitize if values mactch custom keywords (optional)"
         config_param :pattern_keywords, :array, default: []
+        desc "Prefix for pattern_keywords (optional)"
+        config_param :pattern_keywords_prefix, :string, default: "Keywords"
       end
 
       def configure(conf)
         super
       
-        @salt = ""
-        @salt = conf['hash_salt'] if conf['hash_salt'] != nil
+        @salt = conf['hash_salt']
  
         @sanitizerules = []
         @rules.each do |rule|
           if rule.keys.empty?
             raise Fluent::ConfigError, "You need to specify at least one key in rule statement."
           else
+            #keys = record_accessor_create(rule.keys)
             keys = rule.keys
           end
           
-          if rule.pattern_ipv4 == true || rule.pattern_ipv4 == false
+          #record_accessor_create(rule.keys)
+          
+          if rule.pattern_ipv4 || !rule.pattern_ipv4
             pattern_ipv4 = rule.pattern_ipv4
           else
             raise Fluent::ConfigError, "true or false is available for pattern_ipv4 option."
           end
  
-          if rule.pattern_fqdn == true || rule.pattern_fqdn == false
+          if rule.pattern_fqdn || !rule.pattern_fqdn
             pattern_fqdn = rule.pattern_fqdn
           else
             raise Fluent::ConfigError, "true or false is available for pattern_fqdn option."
           end
-        
-          pattern_regex = rule.pattern_regex
+          
+          if rule.pattern_regex.class == Regexp
+            pattern_regex = rule.pattern_regex
+          else
+            raise Fluent::ConfigError, "Your need to specify Regexp for pattern_fqdn option."
+          end      
+    
           pattern_keywords = rule.pattern_keywords
 
           case [pattern_ipv4, pattern_fqdn, pattern_regex, pattern_keywords.empty?]
           when [false, false, /^$/, true]
             raise Fluent::ConfigError, "You need to specify at least one pattern option in the rule statement." 
           end
-          @sanitizerules.push([keys, pattern_ipv4, pattern_fqdn, pattern_regex, pattern_keywords])
+      
+          regex_prefix = rule.pattern_regex_prefix
+          keywords_prefix = rule.pattern_keywords_prefix
+
+          @sanitizerules.push([keys, pattern_ipv4, pattern_fqdn, pattern_regex, pattern_keywords, regex_prefix, keywords_prefix])
         end
       end
 
       def filter(tag, time, record)
-        @sanitizerules.each do |keys, pattern_ipv4, pattern_fqdn, pattern_regex, pattern_keywords|  
+        @sanitizerules.each do |keys, pattern_ipv4, pattern_fqdn, pattern_regex, pattern_keywords, regex_prefix, keywords_prefix|  
           keys.each do |key|
-            if key.include?(".")
-              nkey = key.split(".")
-              if nkey.length ==2
-                if record[nkey[0]].key?(nkey[1])
-                  v = record[nkey[0]][nkey[1]]
-                  record[nkey[0]][nkey[1]] = sanitize_ipv4_val(@salt, record[nkey[0]][nkey[1]]) if pattern_ipv4 == true
-                  record[nkey[0]][nkey[1]] = sanitize_fqdn_val(@salt, record[nkey[0]][nkey[1]]) if pattern_fqdn == true
-                  record[nkey[0]][nkey[1]] = sanitize_regex(@salt, record[nkey[0]][nkey[1]]) if is_regex?(pattern_regex) && !!(pattern_regex =~ record[nkey[0]][nkey[1]])
-                  record[nkey[0]][nkey[1]] = sanitize_keyword(@salt, pattern_keywords, record[nkey[0]][nkey[1]]) if pattern_keywords.empty? == false
-                else
-                  $log.error "no such nested key found : key name = #{key}" 
-                end
-              elsif nkey.length ==3
-                if record[nkey[0]][nkey[1]].key?(nkey[2])
-                  v = record[nkey[0]][nkey[1]][nkey[2]]
-                  record[nkey[0]][nkey[1]][nkey[2]] = sanitize_ipv4_val(@salt, record[nkey[0]][nkey[1]][nkey[2]]) if pattern_ipv4 == true
-                  record[nkey[0]][nkey[1]][nkey[2]] = sanitize_fqdn_val(@salt, record[nkey[0]][nkey[1]][nkey[2]]) if pattern_fqdn == true
-                  record[nkey[0]][nkey[1]][nkey[2]] = sanitize_regex(@salt, record[nkey[0]][nkey[1]][nkey[2]]) if is_regex?(pattern_regex) && !!(pattern_regex =~ record[nkey[0]][nkey[1]][nkey[2]])
-                  record[nkey[0]][nkey[1]][nkey[2]] = sanitize_keyword(@salt, pattern_keywords, record[nkey[0]][nkey[1]][nkey[2]]) if pattern_keywords.empty? == false
-                else
-                  $log.error "no such nested key found : key name = #{key}"
-                end
-              end
-            else
-              if record.key?(key)
-                v = record[key]
-                record[key] = sanitize_ipv4_val(@salt, record[key]) if pattern_ipv4 == true
-                record[key] = sanitize_fqdn_val(@salt, record[key]) if pattern_fqdn == true
-                record[key] = sanitize_regex(@salt, v) if is_regex?(pattern_regex) && !!(pattern_regex =~ record[key])
-                record[key] = sanitize_keyword_val(@salt, pattern_keywords, v) if pattern_keywords.empty? == false
-              else
-                $log.error "no such key found : key name = #{key}"
-              end
-            end
+            accessor = record_accessor_create("$."+key.to_s)
+            accessor.set(record, sanitize_ipv4_val(accessor.call(record).to_s)) if pattern_ipv4
+            accessor.set(record, sanitize_fqdn_val(accessor.call(record).to_s)) if pattern_fqdn
+            accessor.set(record, sanitize_regex_val(accessor.call(record).to_s, regex_prefix)) if accessor.call(record).to_s.match?(pattern_regex)
+            accessor.set(record, sanitize_keywords_val(accessor.call(record).to_s, pattern_keywords, keywords_prefix)) if !pattern_keywords.empty?
           end
         end
         record
       end
 
       def include_ipv4?(str)
-        !!(str =~ /^.*\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}.*$/)
+        str.match?(/^.*\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}.*$/)
       end
 
       def is_ipv4?(str)
-        !!(str =~ /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/)
+        str.match?(/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/)
       end
 
       def is_ipv4_port?(str)
-        !!(str =~ /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:[0-9]{1,5}$/)
+        str.match?(/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:[0-9]{1,5}$/)
       end
 
       def include_fqdn?(str)
-        !!(str =~ /^.*\b(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.){2,}([A-Za-z]|[A-Za-z][A-Za-z\-]*[A-Za-z]){2,}.*$/)
+        str.match?(/^.*\b(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.){2,}([A-Za-z]|[A-Za-z][A-Za-z\-]*[A-Za-z]){2,}.*$/)
       end
 
       def is_fqdn?(str)
-        !!(str =~ /^\b(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.){2,}([A-Za-z]|[A-Za-z][A-Za-z\-]*[A-Za-z]){2,}$/)
+        str.match?(/^\b(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.){2,}([A-Za-z]|[A-Za-z][A-Za-z\-]*[A-Za-z]){2,}$/)
       end
 
       def is_fqdn_port?(str)
-        !!(str =~ /^\b(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.){2,}([A-Za-z]|[A-Za-z][A-Za-z\-]*[A-Za-z]){2,}:[0-9]{1,5}$/)
+        str.match?(/^\b(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.){2,}([A-Za-z]|[A-Za-z][A-Za-z\-]*[A-Za-z]){2,}:[0-9]{1,5}$/)
       end
 
       def is_url?(str)
-        !!(str =~ /^[a-zA-Z0-9]{2,}:\/\/.*$/)
-      end
-
-      def is_regex?(regex)
-        return regex.class == Regexp
+        str.match?(/^[a-zA-Z0-9]{2,}:\/\/.*$/)
       end
 
       def subtract_quotations(str)
-        return str.gsub(/\\\"|\'|\"|\\\'/,'')
+        str.gsub(/\\\"|\'|\"|\\\'/,'')
       end
 
-      def sanitize_ipv4(salt, str)
-        return str, "IPv4_"+Digest::MD5.hexdigest(salt + str)
+      def sanitize_ipv4(str)
+        return "IPv4_"+Digest::MD5.hexdigest(@salt + str)
       end
 
-      def sanitize_fqdn(salt, str)
-        return str, "FQDN_"+Digest::MD5.hexdigest(salt + str)
+      def sanitize_fqdn(str)
+        return "FQDN_"+Digest::MD5.hexdigest(@salt + str)
       end
 
-      def sanitize_regex(salt, str)
-        return "Regex_"+Digest::MD5.hexdigest(salt + str)
+      def sanitize_regex(str, prefix)
+        return prefix + "_" + Digest::MD5.hexdigest(@salt + str)
       end
       
-      def sanitize_keyword(salt, str)
-        return "Keyword_"+Digest::MD5.hexdigest(salt + str)
+      def sanitize_keyword(str, prefix)
+        return prefix + "_" + Digest::MD5.hexdigest(@salt + str)
       end
 
-      def sanitize_ipv4_port(salt, str)
+      def sanitize_ipv4_port(str)
         ip_port = []
         str.split(":").each do |s|
-          b, s =  sanitize_ipv4(salt, s) if is_ipv4?(s)
+          s =  sanitize_ipv4(s) if is_ipv4?(s)
           ip_port.push(s)
         end
-        return str, ip_port.join(":")
+        return ip_port.join(":")
       end
 
-      def sanitize_fqdn_port(salt, str)
+      def sanitize_fqdn_port(str)
         fqdn_port = []
         str.split(":").each do |s|
-          b, s =  sanitize_fqdn(salt, s) if is_fqdn?(s)
+          s = sanitize_fqdn(s) if is_fqdn?(s)
           fqdn_port.push(s)
         end
-        return str, fqdn_port.join(":")
+        return fqdn_port.join(":")
       end
 
-      def sanitize_ipv4_url(salt, str)
+      def sanitize_ipv4_url(str)
         ip_url = []
         str.split("://").each do |s|
           if s.include?("/")
             url_slash = []
             s.split("/").each do |ss|
-              b, ss = sanitize_ipv4(salt, ss) if is_ipv4?(ss)
-              b, ss = sanitize_ipv4_port(salt, ss) if is_ipv4_port?(ss)
+              ss = sanitize_ipv4(ss) if is_ipv4?(ss)
+              ss = sanitize_ipv4_port(ss) if is_ipv4_port?(ss)
               url_slash.push(ss)
             end
             s = url_slash.join("/")
           else
-            b, s = sanitize_ipv4(salt, s) if is_ipv4?(s)
-            b, s = sanitize_ipv4_port(salt, s) if is_ipv4_port?(s)
+            s = sanitize_ipv4_port(s) if is_ipv4_port?(s)
+            s = sanitize_ipv4_port(s) if is_ipv4_port?(s)
           end
           ip_url.push(s)
         end
-        return str, ip_url.join("://")
+        return ip_url.join("://")
       end
 
-      def sanitize_fqdn_url(salt, str)
+      def sanitize_fqdn_url(str)
         fqdn_url = []
         str.split("://").each do |s|
           if s.include?("/")
             url_slash = []
             s.split("/").each do |ss|
-              b, ss = sanitize_fqdn(salt, ss) if is_fqdn?(ss)
-              b, ss = sanitize_fqdn_port(salt, ss) if is_fqdn_port?(ss)
+              ss = sanitize_fqdn(ss) if is_fqdn?(ss)
+              ss = sanitize_fqdn_port(ss) if is_fqdn_port?(ss)
               url_slash.push(ss)
             end
             s = url_slash.join("/")
           else
-            b, s = sanitize_fqdn(salt, s) if is_fqdn?(s)
-            b, s = sanitize_fqdn_port(salt, s) if is_fqdn_port?(s)
+            s = sanitize_fqdn(s) if is_fqdn?(s)
+            s = sanitize_fqdn_port(s) if is_fqdn_port?(s)
           end
           fqdn_url.push(s)
         end
-        return str, fqdn_url.join("://")
+        return fqdn_url.join("://")
       end
 
-      def sanitize_ipv4_val(salt, v)
+      def sanitize_ipv4_val(v)
         line = []
         if v.include?(",")
           v.split(",").each do |s|
             s = subtract_quotations(s)
             if include_ipv4?(s)
               if is_url?(s)
-                b, s = sanitize_ipv4_url(salt, s)
+                s = sanitize_ipv4_url(s)
               else
-                b, s = sanitize_ipv4(salt, s) if is_ipv4?(s)
-                b, s = sanitize_ipv4_port(salt, s) if is_ipv4_port?(s)
+                s = sanitize_ipv4(s) if is_ipv4?(s)
+                s = sanitize_ipv4_port(s) if is_ipv4_port?(s)
               end
             end
             line.push(s)
@@ -249,29 +231,30 @@ module Fluent
             s = subtract_quotations(s)
             if include_ipv4?(s)
               if is_url?(s)
-                b, s = sanitize_ipv4_url(salt, s)
+                s = sanitize_ipv4_url(s)
               else
-                b, s = sanitize_ipv4(salt, s) if is_ipv4?(s)
-                b, s = sanitize_ipv4_port(salt, s) if is_ipv4_port?(s)
+                s = sanitize_ipv4(s) if is_ipv4?(s)
+                s = sanitize_ipv4_port(s) if is_ipv4_port?(s)
               end
             end
             line.push(s)
           end
+          $log.debug "[pattern_ipv4] sanitize '#{v}' to '#{line.join(" ")}'" if v != line.join(" ")
           return line.join(" ")
         end
       end
 
-      def sanitize_fqdn_val(salt, v)
+      def sanitize_fqdn_val(v)
         line = []
         if v.include?(",")
           v.split(",").each do |s|
             s = subtract_quotations(s)
             if include_fqdn?(s)
               if is_url?(s)
-                b, s = sanitize_fqdn_url(salt, s)
+                s = sanitize_fqdn_url(s)
               else
-                b, s = sanitize_fqdn(salt, s) if is_fqdn?(s)
-                b, s = sanitize_fqdn_port(salt, s) if is_fqdn_port?(s)
+                s = sanitize_fqdn(s) if is_fqdn?(s)
+                s = sanitize_fqdn_port(s) if is_fqdn_port?(s)
               end
             end
             line.push(s)
@@ -282,27 +265,35 @@ module Fluent
             s = subtract_quotations(s)
             if include_fqdn?(s)
               if is_url?(s)
-                b, s = sanitize_fqdn_url(salt, s)
+                s = sanitize_fqdn_url(s)
               else
-                b, s = sanitize_fqdn(salt, s) if is_fqdn?(s)
-                b, s = sanitize_fqdn_port(salt, s) if is_fqdn_port?(s)
+                s = sanitize_fqdn(s) if is_fqdn?(s)
+                s = sanitize_fqdn_port(s) if is_fqdn_port?(s)
               end
             end
             line.push(s)
           end
+          $log.debug "[pattern_fqdn] sanitize '#{v}' to '#{line.join(" ")}'" if v != line.join(" ")
           return line.join(" ")
         end
       end
 
-      def sanitize_keyword_val(salt, keywords, v)
+      def sanitize_regex_val(v, prefix)
+        s = sanitize_regex(v, prefix)  
+        $log.debug "[pattern_keywords] sanitize '#{v}' to '#{s}'" if v != s
+        return s
+      end
+
+      def sanitize_keywords_val(v, keywords, prefix)
         line = []
         v.split().each do |vv|
           if keywords.include?(vv)
-            line.push(sanitize_keyword(salt, vv))
+            line.push(sanitize_keyword(vv, prefix))
           else
             line.push(vv)
            end
         end
+        $log.debug "[pattern_keywords] sanitize '#{v}' to '#{line.join(" ")}'" if v != line.join(" ")
         return line.join(" ")
       end
 
