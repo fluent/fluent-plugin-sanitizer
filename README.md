@@ -1,5 +1,5 @@
 # fluent-plugin-sanitizer
-The fluent-plugin-sanitzer is [Fluentd](https://fluentd.org/) filter plugin to sanitize sensitive information with custom rules. The fluent-plugin-sanitzer provides not only options to sanitize values with custom regular expression and keywords but also build-in options which allows users to easily sanitize IP addresses and hostnames in complex messages.
+Sanitizeris [Fluentd](https://fluentd.org/) filter plugin to mask sensitive information. With Sanitizer, you can mask based on key-value pairs on the fly in between Fluentd processes. Sanitizer provides options which enable you to mask values with custom rules. In custom rules, you can specify patterns such as IP addresses, hostnames in FQDN style, regular expressions and keywords. In terms of IP addresses and hostnames, Sanitizer delivers useful options which allows you to easily mask IP addresses and hostnames in complex messages.
 
 ## Installation
 When you are using OSS Fluentd :
@@ -13,15 +13,17 @@ td-agent-gem install fluent-plugin-sanitizer
 
 ## Configuration
 ### Parameters
-- hash_salt : specify hash salt used to sanitize original information (:string, default: nil)
-- rule options
-  - keys : Name of keys whose values are to be sanitized. You can specify multiple keys. When keys are nested, you can use {parent key}.{child key} like "kubernetes.master_url". (:array, default:[])
-  - pattern_ipv4 : sanitize if values contain IPv4. (:bool, default: false)
-  - pattern_fqdn : sanitize if values contain hostname in FQDN style. (:bool, default: false)
-  - pattern_regex : sanitize if value mactchs custom regular expression (:regexp, default: /^$/)
-  - pattern_keywords : sanitize if values match custom keywords. You can specify multiple keywords. (:array, default:[])
+- hash_salt (optional) : hash salt used when calculating hash value with original information. 
+- rule options : 
+  - keys (mandatory) :  Name of keys whose values will be masked. You can specify multiple keys. When keys are nested, you can use {parent key}.{child key} like "kubernetes.master_url". 
+  - pattern_ipv4 (optional)  : Mask IP addresses in IPv4 format. You can use “true” or “false”. (defalt: false)
+  - pattern_fqdn (optional)  : Mask hostname in FQDN style. You can use “true” or “false”. (defalt: false)
+  - pattern_regex (optional)  : Mask value mactches custom regular expression. You need provide a regular expression in this options.
+  - pattern_regex_prefix (optional) : Define prefix used for masking vales. (default: Regex)
+  - pattern_keywords (optional)  : Mask values match custom keywords. You can specify multiple keywords. 
+  - pattern_keywords_prefix (optional) : Define prefix used for masking vales. (default: Keyword)
 
-You can specify multiple options in a single rule like following sample configuration.
+You can specify multiple rules in a single configuration. It is also possible to define multiple pattern options in a single rule like following sample.
   
 ```
 <filter **>
@@ -44,106 +46,96 @@ You can specify multiple options in a single rule like following sample configur
 ```
 
 ## Use cases
+### Mask IP addresses and Hostnames
+Masking IP addresses and hostnames is one of the typical use cases of security operation. You just need to specify name of keys potentially  have IP addresses and hostnames in value. Here is configuration sample as well as input and output samples. 
 
-### Sanitize IP address and hostname
-Sample rule #1
+**Configuration sample**
 ```
-<rule>
-  keys ip
-  pattern_ipv4 true
-</rule>
-<rule>
-  keys host
-  pattern_fqdn true
-</rule>
+<filter **>
+    @type sanitizer
+    hash_salt mysalt
+    <rule>
+        keys ip
+        pattern_ipv4 true
+    </rule>
+    <rule>
+        keys host
+        pattern_fqdn true
+    </rule>
+    <rule>
+        keys system.url, system.log
+        pattern_ipv4 true
+        pattern_fqdn true
+    </rule>
+</filter>
 ```
-Sample input #1
+**Input sample**
 ```
-{
-  "ip":"192.168.10.10",
-  "host":"test01.demo.com"
-} 
-```
-Sample output #1
-```
-{
-  "ip":"IPv4_94712b06963e277fe28469388323665d",
-  "host":"FQDN_37de34e3d799de477c742d8d7bb35550"
-}
-```
-
-### Sanitize IP addresses and hostnames in between URL and messages
-You may sanitize IP addresses and hostnames in URL and messages. The "pattern_ipv4" and "pattern_fqdn" options can help you easily to sanitize information in such cases.
-
-Sample rule #2
-```
-<rule>
-  keys system.url, system.log
-  pattern_ipv4 true
-  pattern_fqdn true
-</rule>
-```
-Sample input #2
-```
-{
-  "tag":"test", 
-  "system" : 
-  {
-    "url":"https://test02.demo.com:8000/event", 
-    "log":"access from 192.168.10.100 was blocked"
+ {
+     "ip" : "192.168.10.10",
+     "host" : "test01.demo.com",
+      "system" : {
+         "url" : "https://test02.demo.com:8000/event",
+         "log" : "access from 192.168.10.100 was blocked"
+     }
   }
-}
 ```
-Sample output #3
+**Output sample**
 ```
-{
-  "tag":"test",
-  "system":{
-    "url":"https://FQDN_e9a59624f555d02f06209c9942dded19:8000/event",
-    "log":"access from IPv4_f7374d61e6d21dc1105f70358a5f8e8f was blocked"
-  }
-}
+ {
+     "ip" : "IPv4_94712b06963e277fe28469388323665d",
+     "host" : "FQDN_37de34e3d799de477c742d8d7bb35550",
+     "system" : {
+         "url" : "https://FQDN_e9a59624f555d02f06209c9942dded19:8000/event"
+         "log" : "access from IPv4_f7374d61e6d21dc1105f70358a5f8e8f was blocked"
+     }
+ }
 ```
-### Sanitize keywords in between messages
-When "pattern_keywords" option is selected, fluent-plugin-sanitizer splits messages and sanitizes blocks which match keywords.
-Sample rule#3
+### Mask words match custom keyword and regular expression
+In case log messages including sensitive information such as SSN and phone number, Sanitizer could also help you. If you know exact keyword need to be masked, you can use keyword option. You can also use regex option if you like to mask information which matches custom regular expression.
+
+**Configuration sample**
 ```
-<rule>
-  keys message
-  pattern_keywords user1, application1
-</rule>
+<filter **>
+    @type sanitizer
+    hash_salt mysalt
+    <rule>
+        keys user.ssn
+        pattern_regex /^(?!(000|666|9))\d{3}-(?!00)\d{2}-(?!0000)\d{4}$/
+        pattern_regex_prefix SSN
+    </rule>
+    <rule>
+        keys user.phone
+        pattern_regex /^\d{3}-?\d{3}-?\d{4}$/
+        pattern_regex_prefix Phone
+    </rule>
+</filter>
 ```
-Sample input #3
+**Input sample**
 ```
-{
-  "message":"user1 failed to login application1"
-}
+ {
+     "user" : {
+         "ssn" : "123-45-6789"
+         "phone" : "123-456-7890"
+     }
+ }
 ```
-Sample output #3
+**Output sample**
 ```
-{
-  "message":"Keyword_321865df6f0ce6bdf3ea16f74623534a failed to login Keyword_49006ff9b2ab584795e4cbb7636bd17c"
-}
+ {
+     "user" : {
+         "ssn" : "SSN_f6b6430343a9a749e12db8a112ca74e9"
+         "phone" : "Phone_0a25187902a0cf755627397eb085d736"
+     }
+ }
 ```
-### Sanitize all messages
-Sample rule #4
+### Tips : Debug how sanitizer works
+When you design custom rules in configuration file, you might need information how Sanitizer masks original values into hash values for debugging purpose. You can check that information if you run td-agent/Fluentd with debug option enabled. The debug information is shown in log file of td-agent/Fluentd like following log message sample.
+
+**Log message sample**
 ```
-<rule>
-  keys message
-  pattern_regex /^.*$/
-</rule>
-```
-Sample input#4
-```
-{
-  "message":"user1 failed to login application1"
-}
-```
-Sample output #4
-```
-{
-  "message":"Regex_70e9b833f5f00a4b0ab9fcf74af81f26"
-}
+YYYY-MM-DD Time fluent.debug: {"message":"[pattern_regex] sanitize '123-45-6789' to 'SSN_f6b6430343a9a749e12db8a112ca74e9'"}
+YYYY-MM-DD Time fluent.debug: {"message":"[pattern_regex] sanitize '123-456-7890' to 'Phone_0a25187902a0cf755627397eb085d736'"}
 ```
 ## Contribute
 Contribution to fluent-plugin-sanitizer is always welcomed.
