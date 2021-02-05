@@ -18,12 +18,12 @@ td-agent-gem install fluent-plugin-sanitizer
   - keys (mandatory) :  Name of keys whose values will be masked. You can specify multiple keys. When keys are nested, you can use {parent key}.{child key} like "kubernetes.master_url". 
   - pattern_ipv4 (optional)  : Mask IP addresses in IPv4 format. You can use “true” or “false”. (defalt: false)
   - pattern_fqdn (optional)  : Mask hostname in FQDN style. You can use “true” or “false”. (defalt: false)
-  - pattern_regex (optional)  : Mask value mactches custom regular expression. You need provide a regular expression in this options.
+  - pattern_regex (optional)  : Mask value mactches custom regular expression. You need to provide a regular expression in these options.
   - pattern_regex_prefix (optional) : Define prefix used for masking vales. (default: Regex)
   - pattern_keywords (optional)  : Mask values match custom keywords. You can specify multiple keywords. 
   - pattern_keywords_prefix (optional) : Define prefix used for masking vales. (default: Keyword)
 
-You can specify multiple rules in a single configuration. It is also possible to define multiple pattern options in a single rule like following sample.
+You can specify multiple rules in a single configuration. It is also possible to define multiple pattern options in a single rule like the following sample.
   
 ```
 <filter **>
@@ -47,7 +47,7 @@ You can specify multiple rules in a single configuration. It is also possible to
 
 ## Use cases
 ### Mask IP addresses and Hostnames
-Masking IP addresses and hostnames is one of the typical use cases of security operation. You just need to specify name of keys potentially  have IP addresses and hostnames in value. Here is configuration sample as well as input and output samples. 
+Masking IP addresses and hostnames is one of the typical use cases of security operations. You just need to specify the name of keys that potentially  have IP addresses and hostnames in value. Here is a configuration sample as well as input and output samples. 
 
 **Configuration sample**
 ```
@@ -92,7 +92,7 @@ Masking IP addresses and hostnames is one of the typical use cases of security o
  }
 ```
 ### Mask words match custom keyword and regular expression
-In case log messages including sensitive information such as SSN and phone number, Sanitizer could also help you. If you know exact keyword need to be masked, you can use keyword option. You can also use regex option if you like to mask information which matches custom regular expression.
+In case log messages including sensitive information such as SSN and phone number, Sanitizer could also help you. If you know the exact keyword that needs to be masked, you can use the keyword option. You can also use the regex option if you like to mask information which matches custom a regular expression.
 
 **Configuration sample**
 ```
@@ -130,7 +130,7 @@ In case log messages including sensitive information such as SSN and phone numbe
  }
 ```
 ### Tips : Debug how sanitizer works
-When you design custom rules in configuration file, you might need information how Sanitizer masks original values into hash values for debugging purpose. You can check that information if you run td-agent/Fluentd with debug option enabled. The debug information is shown in log file of td-agent/Fluentd like following log message sample.
+When you design custom rules in a configuration file, you might need information about how Sanitizer masks original values into hash values for debugging purposes. You can check that information if you run td-agent/Fluentd with debug option enabled. The debug information is shown in the log file of td-agent/Fluentd like the following log message sample.
 
 **Log message sample**
 ```
