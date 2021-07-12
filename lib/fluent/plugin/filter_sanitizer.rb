@@ -98,20 +98,20 @@ module Fluent
         @sanitizerules.each do |keys, pattern_ipv4, pattern_fqdn, pattern_regex, regex_capture_group, pattern_keywords, regex_prefix, keywords_prefix|  
           keys.each do |key|
             accessor = record_accessor_create("$."+key.to_s)
-            if pattern_ipv4
+            if pattern_ipv4 && accessor.call(record)
               accessor.set(record, sanitize_ipv4_val(accessor.call(record).to_s))
             end
-            if pattern_fqdn
+            if pattern_fqdn && accessor.call(record)
               accessor.set(record, sanitize_fqdn_val(accessor.call(record).to_s))
             end
-            if pattern_regex
+            if pattern_regex && accessor.call(record)
               if regex_capture_group.empty?
                 accessor.set(record, sanitize_regex_val(accessor.call(record).to_s, regex_prefix, pattern_regex))
               else
                 accessor.set(record, sanitize_regex_val_capture(accessor.call(record).to_s, regex_prefix, pattern_regex, regex_capture_group))
               end
             end
-            if !pattern_keywords.empty?
+            if !pattern_keywords.empty? && accessor.call(record)
               accessor.set(record, sanitize_keywords_val(accessor.call(record).to_s, pattern_keywords, keywords_prefix))
             end
           end
