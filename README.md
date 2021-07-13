@@ -18,10 +18,11 @@ td-agent-gem install fluent-plugin-sanitizer
   - keys (mandatory) :  Name of keys whose values will be masked. You can specify multiple keys. When keys are nested, you can use {parent key}.{child key} like "kubernetes.master_url". 
   - pattern_ipv4 (optional)  : Mask IP addresses in IPv4 format. You can use “true” or “false”. (defalt: false)
   - pattern_fqdn (optional)  : Mask hostname in FQDN style. You can use “true” or “false”. (defalt: false)
-  - pattern_regex (optional)  : Mask value mactches custom regular expression. You need to provide a regular expression in these options.
-  - pattern_regex_prefix (optional) : Define prefix used for masking vales. (default: Regex)
+  - pattern_regex (optional)  : Mask value mactches custom regular expression.
+    - regex_capture_group (optional) : If you define capture group in regular expression, you can specify the name of capture group to be masked.
+    - pattern_regex_prefix (optional) : Define prefix used for masking vales. (default: Regex)
   - pattern_keywords (optional)  : Mask values match custom keywords. You can specify multiple keywords. 
-  - pattern_keywords_prefix (optional) : Define prefix used for masking vales. (default: Keyword)
+    - pattern_keywords_prefix (optional) : Define prefix used for masking vales. (default: Keyword)
 
 You can specify multiple rules in a single configuration. It is also possible to define multiple pattern options in a single rule like the following sample.
   
@@ -129,6 +130,34 @@ In case log messages including sensitive information such as SSN and phone numbe
      }
  }
 ```
+From v0.1.2, "regex_capture_group" option is available. With "regex_capture_group" option, it is possible to mask specific part of original messages. 
+
+**Configuration sample**
+```
+<rule>
+  keys user.email
+  pattern_regex /(?<user>\w+)\@\w+.\w+/
+  regex_capture_group "user"
+  pattern_regex_prefix "USER"
+</rule>
+```
+**Input sample**
+```
+ {
+     "user" : {
+         "email" : "user1@demo.com"
+     }
+ }
+```
+**Output sample**
+```
+ {
+     "user" : {
+         "email" : "USER_321865df6f0ce6bdf3ea16f74623534a@demo.com"
+     }
+ }
+```
+
 ### Tips : Debug how sanitizer works
 When you design custom rules in a configuration file, you might need information about how Sanitizer masks original values into hash values for debugging purposes. You can check that information if you run td-agent/Fluentd with debug option enabled. The debug information is shown in the log file of td-agent/Fluentd like the following log message sample.
 
