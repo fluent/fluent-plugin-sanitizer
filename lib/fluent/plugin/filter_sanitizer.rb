@@ -23,23 +23,26 @@ module Fluent
 
       helpers :event_emitter, :record_accessor
 
-      desc "Hash salt to be used to generate hash values with MD5(optional)"
+      desc "Hash salt to be used to generate hash values with specified hash(optional)"
       config_param :hash_salt, :string, default: ""
-      
-      config_section :rule, param_name: :rules, multi: true do 
-        desc "Name of keys whose valuse are to be sanitized"
+
+      desc "Hash scheme to use for generating hash value (supported schemes are md5,sha1,sha256,sha384,sha512) (optional)"
+      config_param :hash_scheme, :enum, list: [:md5, :sha1, :sha256, :sha384, :sha512], default: :md5
+
+      config_section :rule, param_name: :rules, multi: true do
+        desc "Name of keys whose values are to be sanitized"
         config_param :keys, :array, default: []
         desc "Sanitize if values contain IPv4 (optional)"
         config_param :pattern_ipv4, :bool, default: false
-        desc "Sanitize if values contain Hostname in FQDN style (ptional)"
+        desc "Sanitize if values contain Hostname in FQDN style (optional)"
         config_param :pattern_fqdn, :bool, default: false
-        desc "Sanitize if values mactch custom regular expression (optional)"
+        desc "Sanitize if values match custom regular expression (optional)"
         config_param :pattern_regex, :regexp, default: /^$/
-        desc "Prefix for pattern_regex (optional)"
-        config_param :regex_capture_group, :string, default:""
         desc "Target capture group name to be masked (optional)"
+        config_param :regex_capture_group, :string, default:""
+        desc "Prefix for pattern_regex (optional)"
         config_param :pattern_regex_prefix, :string, default: "Regex"
-        desc "Sanitize if values mactch custom keywords (optional)"
+        desc "Sanitize if values match custom keywords (optional)"
         config_param :pattern_keywords, :array, default: []
         desc "Prefix for pattern_keywords (optional)"
         config_param :pattern_keywords_prefix, :string, default: "Keywords"
@@ -49,7 +52,21 @@ module Fluent
         super
       
         @salt = conf['hash_salt']
- 
+        @hash_scheme = conf['hash_scheme']
+        @sanitize_func =
+          case @hash_scheme
+            when "sha1"
+              Proc.new { |str| Digest::SHA1.hexdigest(@salt + str) }
+            when "sha256"
+              Proc.new { |str| Digest::SHA256.hexdigest(@salt + str) }
+            when "sha384"
+              Proc.new { |str| Digest::SHA384.hexdigest(@salt + str) }
+            when "sha512"
+              Proc.new { |str| Digest::SHA512.hexdigest(@salt + str) }
+            else
+              Proc.new { |str| Digest::MD5.hexdigest(@salt + str) }
+          end
+
         @sanitizerules = []
         @rules.each do |rule|
           if rule.keys.empty?
@@ -77,16 +94,11 @@ module Fluent
             pattern_regex = rule.pattern_regex
             regex_capture_group = rule.regex_capture_group
           else
-            raise Fluent::ConfigError, "Your need to specify Regexp for pattern_fqdn option."
-          end      
-    
+            raise Fluent::ConfigError, "Your need to specify Regexp for pattern_regex option."
+          end
+
           pattern_keywords = rule.pattern_keywords
 
-          case [pattern_ipv4, pattern_fqdn, pattern_regex, pattern_keywords.empty?]
-          when [false, false, /^$/, true]
-            raise Fluent::ConfigError, "You need to specify at least one pattern option in the rule statement." 
-          end
-      
           regex_prefix = rule.pattern_regex_prefix
           keywords_prefix = rule.pattern_keywords_prefix
 
@@ -98,22 +110,30 @@ module Fluent
         @sanitizerules.each do |keys, pattern_ipv4, pattern_fqdn, pattern_regex, regex_capture_group, pattern_keywords, regex_prefix, keywords_prefix|  
           keys.each do |key|
             accessor = record_accessor_create("$."+key.to_s)
-            if pattern_ipv4 && accessor.call(record)
-              accessor.set(record, sanitize_ipv4_val(accessor.call(record).to_s))
-            end
-            if pattern_fqdn && accessor.call(record)
-              accessor.set(record, sanitize_fqdn_val(accessor.call(record).to_s))
-            end
-            if pattern_regex && accessor.call(record)
-              if regex_capture_group.empty?
-                accessor.set(record, sanitize_regex_val(accessor.call(record).to_s, regex_prefix, pattern_regex))
-              else
-                accessor.set(record, sanitize_regex_val_capture(accessor.call(record).to_s, regex_prefix, pattern_regex, regex_capture_group))
+            begin
+                if pattern_ipv4 && accessor.call(record)
+                  accessor.set(record, sanitize_ipv4_val(accessor.call(record).to_s))
+                end
+                if pattern_fqdn && accessor.call(record)
+                  accessor.set(record, sanitize_fqdn_val(accessor.call(record).to_s))
+                end
+                if pattern_regex && accessor.call(record)
+                  if pattern_regex.to_s.eql?("(?-mix:^$)")
+                     accessor.set(record, sanitize_val(accessor.call(record), regex_prefix))
+                  else
+                     if regex_capture_group.empty?
+                       accessor.set(record, sanitize_regex_val(accessor.call(record), regex_prefix, pattern_regex))
+                     else
+                       accessor.set(record, sanitize_regex_val_capture(accessor.call(record), regex_prefix, pattern_regex, regex_capture_group))
+                     end
+                  end
+                end
+                if !pattern_keywords.empty? && accessor.call(record)
+                  accessor.set(record, sanitize_keywords_val(accessor.call(record).to_s, pattern_keywords, keywords_prefix))
+                end
+              rescue => e
+                  log.warn "Skipping this key", error_class: e.class, error: e.message
               end
-            end
-            if !pattern_keywords.empty? && accessor.call(record)
-              accessor.set(record, sanitize_keywords_val(accessor.call(record).to_s, pattern_keywords, keywords_prefix))
-            end
           end
         end
         record
@@ -152,16 +172,32 @@ module Fluent
       end
 
       def sanitize_ipv4(str)
-        return "IPv4_"+Digest::MD5.hexdigest(@salt + str)
+        return "IPv4_"+ @sanitize_func.call(str)
       end
 
       def sanitize_fqdn(str)
-        return "FQDN_"+Digest::MD5.hexdigest(@salt + str)
+        return "FQDN_"+ @sanitize_func.call(str)
+      end
+
+      def sanitize_val(str, prefix)
+        s = prefix + "_" + @sanitize_func.call(str)
+        $log.debug "[pattern_regex] sanitize '#{str}' to '#{s}'" if str != s
+        return s
       end
 
       def sanitize_regex(str, prefix, regex)
-        if str.to_s.match?(regex)
-          return prefix + "_" + Digest::MD5.hexdigest(@salt + str)
+        regex_p = Regexp.new(regex)
+        if str =~ regex_p
+          scans = str.scan(regex).flatten
+          if scans.any?{ |e| e.nil? }
+            return prefix + "_" + @sanitize_func.call(str)
+          else
+            scans.each do |s|
+              mask = prefix + "_" + @sanitize_func.call(str)
+              str = str.gsub(s, mask)
+            end
+          end
+          return str
         else
           $log.debug "[pattern_regex] #{str} does not match given regex #{regex}. skip this rule."
           return str
@@ -169,11 +205,15 @@ module Fluent
       end
 
       def sanitize_regex_capture(str, prefix, regex, capture_group)
-        if str.match?(regex)
+        regex_p = Regexp.new(regex)
+        if str =~ regex_p
           if str.match(regex).names.include?(capture_group)
-            cg = str.match(regex)[capture_group]
-            mask = prefix + "_" + Digest::MD5.hexdigest(@salt + cg)
-            return str.split(cg)[0] + mask + str.split(cg)[1]
+            scans = str.scan(regex).flatten
+            scans.each do |s|
+              mask = prefix + "_" + @sanitize_func.call(str)
+              str = str.gsub(s, mask)
+            end
+            return str
           else
              $log.debug "[pattern_regex] regex pattern matched but capture group '#{capture_group}' does not exist. Skip this rule."
              return str
@@ -185,7 +225,7 @@ module Fluent
       end
       
       def sanitize_keyword(str, prefix)
-        return prefix + "_" + Digest::MD5.hexdigest(@salt + str)
+        return prefix + "_" + @sanitize_func.call(str)
       end
 
       def sanitize_ipv4_port(str)
