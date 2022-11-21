@@ -14,6 +14,7 @@ td-agent-gem install fluent-plugin-sanitizer
 ## Configuration
 ### Parameters
 - hash_salt (optional) : hash salt used when calculating hash value with original information. 
+- hash_scheme (optional) : Hash scheme to use for generating hash value. Supported schemes are `md5`,`sha1`,`sha256`,`sha384` and `sha512`. (default: `md5`)
 - rule options : 
   - keys (mandatory) :  Name of keys whose values will be masked. You can specify multiple keys. When keys are nested, you can use {parent key}.{child key} like "kubernetes.master_url". 
   - pattern_ipv4 (optional)  : Mask IP addresses in IPv4 format. You can use “true” or “false”. (defalt: false)
@@ -53,21 +54,22 @@ Masking IP addresses and hostnames is one of the typical use cases of security o
 **Configuration sample**
 ```
 <filter **>
-    @type sanitizer
-    hash_salt mysalt
-    <rule>
-        keys ip
-        pattern_ipv4 true
-    </rule>
-    <rule>
-        keys host
-        pattern_fqdn true
-    </rule>
-    <rule>
-        keys system.url, system.log
-        pattern_ipv4 true
-        pattern_fqdn true
-    </rule>
+  @type sanitizer
+  hash_salt mysalt
+  hash_scheme md5
+  <rule>
+    keys ip
+    pattern_ipv4 true
+  </rule>
+  <rule>
+    keys host
+    pattern_fqdn true
+  </rule>
+  <rule>
+    keys system.url, system.log
+    pattern_ipv4 true
+    pattern_fqdn true
+  </rule>
 </filter>
 ```
 **Input sample**
@@ -98,18 +100,18 @@ In case log messages including sensitive information such as SSN and phone numbe
 **Configuration sample**
 ```
 <filter **>
-    @type sanitizer
-    hash_salt mysalt
-    <rule>
-        keys user.ssn
-        pattern_regex /^(?!(000|666|9))\d{3}-(?!00)\d{2}-(?!0000)\d{4}$/
-        pattern_regex_prefix SSN
-    </rule>
-    <rule>
-        keys user.phone
-        pattern_regex /^\d{3}-?\d{3}-?\d{4}$/
-        pattern_regex_prefix Phone
-    </rule>
+  @type sanitizer
+  hash_salt mysalt
+  <rule>
+    keys user.ssn
+    pattern_regex /^(?!(000|666|9))\d{3}-(?!00)\d{2}-(?!0000)\d{4}$/
+    pattern_regex_prefix SSN
+  </rule>
+  <rule>
+    keys user.phone
+    pattern_regex /^\d{3}-?\d{3}-?\d{4}$/
+    pattern_regex_prefix Phone
+  </rule>
 </filter>
 ```
 **Input sample**
