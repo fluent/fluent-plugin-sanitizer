@@ -49,22 +49,22 @@ module Fluent
       end
 
       def configure(conf)
-        super
-      
+        super 
         @salt = conf['hash_salt']
+        @salt = "" if @salt.nil?
         @hash_scheme = conf['hash_scheme']
         @sanitize_func =
           case @hash_scheme
             when "sha1"
               Proc.new { |str| Digest::SHA1.hexdigest(@salt + str) }
             when "sha256"
-              Proc.new { |str| Digest::SHA256.hexdigest(@salt + str) }
+              Proc.new { |str| Digest::SHA256.hexdigest(@salt +str) }
             when "sha384"
-              Proc.new { |str| Digest::SHA384.hexdigest(@salt + str) }
+              Proc.new { |str| Digest::SHA384.hexdigest(@salt +str) }
             when "sha512"
-              Proc.new { |str| Digest::SHA512.hexdigest(@salt + str) }
+              Proc.new { |str| Digest::SHA512.hexdigest(@salt +str) }
             else
-              Proc.new { |str| Digest::MD5.hexdigest(@salt + str) }
+              Proc.new { |str| Digest::MD5.hexdigest(@salt +str) }
           end
 
         @sanitizerules = []
@@ -72,11 +72,8 @@ module Fluent
           if rule.keys.empty?
             raise Fluent::ConfigError, "You need to specify at least one key in rule statement."
           else
-            #keys = record_accessor_create(rule.keys)
             keys = rule.keys
           end
-          
-          #record_accessor_create(rule.keys)
           
           if rule.pattern_ipv4 || !rule.pattern_ipv4
             pattern_ipv4 = rule.pattern_ipv4
@@ -117,16 +114,13 @@ module Fluent
                 if pattern_fqdn && accessor.call(record)
                   accessor.set(record, sanitize_fqdn_val(accessor.call(record).to_s))
                 end
-                if pattern_regex && accessor.call(record)
-                  if pattern_regex.to_s.eql?("(?-mix:^$)")
-                     accessor.set(record, sanitize_val(accessor.call(record), regex_prefix))
+                if !pattern_regex.to_s.eql?("(?-mix:^$)") && accessor.call(record)
+                  if regex_capture_group.empty?
+                    accessor.set(record, sanitize_regex_val(accessor.call(record), regex_prefix, pattern_regex))
                   else
-                     if regex_capture_group.empty?
-                       accessor.set(record, sanitize_regex_val(accessor.call(record), regex_prefix, pattern_regex))
-                     else
-                       accessor.set(record, sanitize_regex_val_capture(accessor.call(record), regex_prefix, pattern_regex, regex_capture_group))
-                     end
+                    accessor.set(record, sanitize_regex_val_capture(accessor.call(record), regex_prefix, pattern_regex, regex_capture_group))
                   end
+                #end
                 end
                 if !pattern_keywords.empty? && accessor.call(record)
                   accessor.set(record, sanitize_keywords_val(accessor.call(record).to_s, pattern_keywords, keywords_prefix))
