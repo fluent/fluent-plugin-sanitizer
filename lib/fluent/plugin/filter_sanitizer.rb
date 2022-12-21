@@ -42,6 +42,8 @@ module Fluent
         config_param :regex_capture_group, :string, default:""
         desc "Prefix for pattern_regex (optional)"
         config_param :pattern_regex_prefix, :string, default: "Regex"
+	desc "Suffix for pattern_regex (optional)"
+        config_param :pattern_regex_suffix, :string, default: "Regex"
         desc "Sanitize if values match custom keywords (optional)"
         config_param :pattern_keywords, :array, default: []
         desc "Prefix for pattern_keywords (optional)"
@@ -97,14 +99,18 @@ module Fluent
           pattern_keywords = rule.pattern_keywords
 
           regex_prefix = rule.pattern_regex_prefix
+	  regex_suffix = rule.pattern_regex_suffix
+	  if regex_suffix.eql?("Regex")
+	  	regex_suffix = rule.pattern_regex_prefix
+	  end
           keywords_prefix = rule.pattern_keywords_prefix
 
-          @sanitizerules.push([keys, pattern_ipv4, pattern_fqdn, pattern_regex, regex_capture_group, pattern_keywords, regex_prefix, keywords_prefix])
+          @sanitizerules.push([keys, pattern_ipv4, pattern_fqdn, pattern_regex, regex_capture_group, pattern_keywords, regex_prefix, regex_suffix, keywords_prefix])
         end
       end
 
       def filter(tag, time, record)
-        @sanitizerules.each do |keys, pattern_ipv4, pattern_fqdn, pattern_regex, regex_capture_group, pattern_keywords, regex_prefix, keywords_prefix|  
+        @sanitizerules.each do |keys, pattern_ipv4, pattern_fqdn, pattern_regex, regex_capture_group, pattern_keywords, regex_prefix, regex_suffix, keywords_prefix|  
           keys.each do |key|
             accessor = record_accessor_create("$."+key.to_s)
             begin
@@ -116,9 +122,9 @@ module Fluent
                 end
                 if !pattern_regex.to_s.eql?("(?-mix:^$)") && accessor.call(record)
                   if regex_capture_group.empty?
-                    accessor.set(record, sanitize_regex_val(accessor.call(record), regex_prefix, pattern_regex))
+                    accessor.set(record, sanitize_regex_val(accessor.call(record), regex_prefix, regex_suffix, pattern_regex))
                   else
-                    accessor.set(record, sanitize_regex_val_capture(accessor.call(record), regex_prefix, pattern_regex, regex_capture_group))
+                    accessor.set(record, sanitize_regex_val_capture(accessor.call(record), regex_prefix, regex_suffix, pattern_regex, regex_capture_group))
                   end
                 #end
                 end
@@ -173,21 +179,21 @@ module Fluent
         return "FQDN_"+ @sanitize_func.call(str)
       end
 
-      def sanitize_val(str, prefix)
-        s = prefix + "_" + @sanitize_func.call(str)
+      def sanitize_val(str, prefix,suffix)
+        s = prefix + "_" + @sanitize_func.call(str)+"_" +suffix
         $log.debug "[pattern_regex] sanitize '#{str}' to '#{s}'" if str != s
         return s
       end
 
-      def sanitize_regex(str, prefix, regex)
+      def sanitize_regex(str, prefix, suffix, regex)
         regex_p = Regexp.new(regex)
         if str =~ regex_p
           scans = str.scan(regex).flatten
           if scans.any?{ |e| e.nil? }
-            return prefix + "_" + @sanitize_func.call(str)
+            return prefix + "_" + @sanitize_func.call(str)+"_"+suffix
           else
             scans.each do |s|
-              mask = prefix + "_" + @sanitize_func.call(str)
+              mask = prefix + "_" + @sanitize_func.call(s)+"_"+suffix
               str = str.gsub(s, mask)
             end
           end
@@ -198,13 +204,13 @@ module Fluent
         end
       end
 
-      def sanitize_regex_capture(str, prefix, regex, capture_group)
+      def sanitize_regex_capture(str, prefix, suffix, regex, capture_group)
         regex_p = Regexp.new(regex)
         if str =~ regex_p
           if str.match(regex).names.include?(capture_group)
             scans = str.scan(regex).flatten
             scans.each do |s|
-              mask = prefix + "_" + @sanitize_func.call(str)
+              mask = prefix + "_" + @sanitize_func.call(s)+"_"+suffix
               str = str.gsub(s, mask)
             end
             return str
@@ -348,14 +354,14 @@ module Fluent
         end
       end
 
-      def sanitize_regex_val(v, prefix, regex)
-        s = sanitize_regex(v, prefix, regex)  
+      def sanitize_regex_val(v, prefix, suffix, regex)
+        s = sanitize_regex(v, prefix, suffix, regex)  
         $log.debug "[pattern_regex] sanitize '#{v}' to '#{s}'" if v != s
         return s
       end
 
-      def sanitize_regex_val_capture(v, prefix, regex, capture_group)
-        s = sanitize_regex_capture(v, prefix, regex, capture_group)
+      def sanitize_regex_val_capture(v, prefix, suffix, regex, capture_group)
+        s = sanitize_regex_capture(v, prefix, suffix, regex, capture_group)
         $log.debug "[pattern_regex] sanitize '#{v}' to '#{s}'" if v != s
         return s
       end
